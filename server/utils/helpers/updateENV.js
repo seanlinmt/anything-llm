@@ -1116,12 +1116,38 @@ async function validatePGVectorTableName(key, prevValue, nextValue) {
   return null;
 }
 
+// These keys are stored in the database via SystemSettings, not as environment variables.
+// They are handled separately in the updateENV function.
+const SYSTEM_SETTINGS_KEYS = [
+  "text_splitter_chunk_size",
+  "text_splitter_chunk_overlap",
+];
+
 // This will force update .env variables which for any which reason were not able to be parsed or
 // read from an ENV file as this seems to be a complicating step for many so allowing people to write
 // to the process will at least alleviate that issue. It does not perform comprehensive validity checks or sanity checks
 // and is simply for debugging when the .env not found issue many come across.
 async function updateENV(newENVs = {}, force = false, userId = null) {
   let error = "";
+
+  // Handle SystemSettings keys (stored in database, not environment variables)
+  const systemSettingsUpdates = {};
+  for (const key of SYSTEM_SETTINGS_KEYS) {
+    if (newENVs.hasOwnProperty(key)) {
+      systemSettingsUpdates[key] = newENVs[key];
+      delete newENVs[key]; // Remove from newENVs so it's not processed as an ENV key
+    }
+  }
+
+  // If there are any SystemSettings updates, apply them
+  if (Object.keys(systemSettingsUpdates).length > 0) {
+    const { SystemSettings } = require("../../models/systemSettings");
+    const result = await SystemSettings.updateSettings(systemSettingsUpdates);
+    if (!result.success) {
+      error += result.error || "Failed to update system settings";
+    }
+  }
+
   const validKeys = Object.keys(KEY_MAPPING);
   const ENV_KEYS = Object.keys(newENVs).filter(
     (key) => validKeys.includes(key) && !newENVs[key].includes("******") // strip out answers where the value is all asterisks
@@ -1169,7 +1195,9 @@ async function updateENV(newENVs = {}, force = false, userId = null) {
 
   await logChangesToEventLog(newValues, userId);
   if (process.env.NODE_ENV === "production") dumpENV();
-  return { newValues, error: error?.length > 0 ? error : false };
+  // Include system settings updates in the return value
+  const allNewValues = { ...newValues, ...systemSettingsUpdates };
+  return { newValues: allNewValues, error: error?.length > 0 ? error : false };
 }
 
 async function executeValidationChecks(checks, value, force) {

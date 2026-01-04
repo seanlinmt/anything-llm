@@ -22,7 +22,7 @@ const Weaviate = {
         : {}),
     };
     const client = weaviate.client(options);
-    const isAlive = await await client.misc.liveChecker().do();
+    const isAlive = await client.misc.liveChecker().do();
     if (!isAlive)
       throw new Error(
         "Weaviate::Invalid Alive signal received - is the service online?"

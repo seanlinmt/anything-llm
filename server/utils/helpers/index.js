@@ -431,7 +431,7 @@ function getBaseLLMProviderModel({ provider = null } = {}) {
     case "mistral":
       return process.env.MISTRAL_MODEL_PREF;
     case "huggingface":
-      return null;
+      return process.env.HUGGING_FACE_LLM_MODEL_PREF;
     case "groq":
       return process.env.GROQ_MODEL_PREF;
     case "koboldcpp":

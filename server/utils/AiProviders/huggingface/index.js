@@ -18,10 +18,20 @@ class HuggingFaceLLM {
       baseURL: `${process.env.HUGGING_FACE_LLM_ENDPOINT}/v1`,
       apiKey: process.env.HUGGING_FACE_LLM_API_KEY,
     });
-    // When using HF inference server - the model param is not required so
-    // we can stub it here. HF Endpoints can only run one model at a time.
     // We set to 'tgi' so that endpoint for HF can accept message format
-    this.model = "tgi";
+    this.model =
+      _modelPreference || process.env.HUGGING_FACE_LLM_MODEL_PREF || "tgi";
+    
+    const endpoint = process.env.HUGGING_FACE_LLM_ENDPOINT;
+    const baseURL = endpoint.endsWith("/v1") ? endpoint : `${endpoint}/v1`;
+    
+    this.log(`Endpoint: ${endpoint}`);
+    this.log(`BaseURL: ${baseURL}`);
+
+    this.openai = new OpenAIApi({
+      baseURL,
+      apiKey: process.env.HUGGING_FACE_LLM_API_KEY,
+    });
     this.limits = {
       history: this.promptWindowLimit() * 0.15,
       system: this.promptWindowLimit() * 0.15,
@@ -42,6 +52,32 @@ class HuggingFaceLLM {
         })
         .join("")
     );
+  }
+
+  async #retryable(fn, retries = 3) {
+    let attempt = 0;
+    while (attempt < retries) {
+      try {
+        return await fn();
+      } catch (e) {
+        if (
+          attempt < retries - 1 &&
+          (e.status === 504 || e?.response?.status === 504)
+        ) {
+          this.log(
+            `Encountered 504 Gateway Timeout. Retrying... (${
+              attempt + 1
+            }/${retries})`
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, 2000 * (attempt + 1))
+          );
+          attempt++;
+          continue;
+        }
+        throw e;
+      }
+    }
   }
 
   streamingEnabled() {
@@ -90,24 +126,34 @@ class HuggingFaceLLM {
   }
 
   async getChatCompletion(messages = null, { temperature = 0.7 }) {
-    const result = await LLMPerformanceMonitor.measureAsyncFunction(
-      this.openai.chat.completions
-        .create({
-          model: this.model,
-          messages,
-          temperature,
-        })
-        .catch((e) => {
-          throw new Error(e.message);
-        })
-    );
+    this.log(`Getting chat completion for model ${this.model} with temperature ${temperature}`);
+    this.log(`Messages:`, JSON.stringify(messages, null, 2));
+
+    let result;
+    try {
+      result = await this.#retryable(async () => {
+        return await LLMPerformanceMonitor.measureAsyncFunction(
+          this.openai.chat.completions.create({
+            model: this.model,
+            messages,
+            temperature,
+          })
+        );
+      });
+    } catch (e) {
+      this.log(`Error getting chat completion: ${e.message}`);
+      throw new Error(e.message);
+    }
 
     if (
       !result.output.hasOwnProperty("choices") ||
       result.output.choices.length === 0
-    )
+    ) {
+      this.log(`No choices in response`);
       return null;
+    }
 
+    this.log(`Response:`, result.output.choices[0].message.content);
     return {
       textResponse: result.output.choices[0].message.content,
       metrics: {
@@ -124,22 +170,33 @@ class HuggingFaceLLM {
   }
 
   async streamGetChatCompletion(messages = null, { temperature = 0.7 }) {
-    const measuredStreamRequest = await LLMPerformanceMonitor.measureStream({
-      func: this.openai.chat.completions.create({
-        model: this.model,
-        stream: true,
+    this.log(`Streaming chat completion for model ${this.model} with temperature ${temperature}`);
+    this.log(`Messages:`, JSON.stringify(messages, null, 2));
+
+    const measuredStreamRequest = await this.#retryable(async () => {
+      return await LLMPerformanceMonitor.measureStream({
+        func: this.openai.chat.completions.create({
+          model: this.model,
+          stream: true,
+          messages,
+          temperature,
+        }),
         messages,
-        temperature,
-      }),
-      messages,
-      runPromptTokenCalculation: true,
-      modelTag: this.model,
+        runPromptTokenCalculation: true,
+        modelTag: this.model,
+      });
     });
     return measuredStreamRequest;
   }
 
-  handleStream(response, stream, responseProps) {
-    return handleDefaultStreamResponseV2(response, stream, responseProps);
+  async handleStream(response, stream, responseProps) {
+    const fullText = await handleDefaultStreamResponseV2(
+      response,
+      stream,
+      responseProps
+    );
+    this.log(`Streamed Response:`, fullText);
+    return fullText;
   }
 
   // Simple wrapper for dynamic embedder & normalize interface for all LLM implementations
@@ -154,6 +211,10 @@ class HuggingFaceLLM {
     const { messageArrayCompressor } = require("../../helpers/chat");
     const messageArray = this.constructPrompt(promptArgs);
     return await messageArrayCompressor(this, messageArray, rawHistory);
+  }
+
+  log(text, ...args) {
+    console.log(`\x1b[36m[HuggingFaceLLM]\x1b[0m ${text}`, ...args);
   }
 }
 

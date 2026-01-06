@@ -34,6 +34,22 @@ export default function HuggingFaceOptions({ settings }) {
             spellCheck={false}
           />
         </div>
+      </div>
+      <div className="w-full flex items-center gap-[36px] mt-1.5">
+        <div className="flex flex-col w-60">
+          <label className="text-white text-sm font-semibold block mb-3">
+            Model Preference
+          </label>
+          <input
+            type="text"
+            name="HuggingFaceLLMModelPref"
+            className="border-none bg-theme-settings-input-bg text-white placeholder:text-theme-settings-input-placeholder text-sm rounded-lg focus:outline-primary-button active:outline-primary-button outline-none block w-full p-2.5"
+            placeholder="tgi"
+            defaultValue={settings?.HuggingFaceLLMModelPref}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
         <div className="flex flex-col w-60">
           <label className="text-white text-sm font-semibold block mb-3">
             Model Token Limit

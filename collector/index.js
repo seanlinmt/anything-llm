@@ -190,7 +190,8 @@ app
     await wipeCollectorStorage();
     console.log(`Document processor app listening on port 8888`);
   })
-  .on("error", function (_) {
+  .on("error", function (err) {
+    console.error(`[Collector] Server setup error: ${err.message}`, err);
     process.once("SIGUSR2", function () {
       process.kill(process.pid, "SIGUSR2");
     });

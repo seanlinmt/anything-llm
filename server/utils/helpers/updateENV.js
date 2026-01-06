@@ -151,7 +151,7 @@ const KEY_MAPPING = {
   // Hugging Face LLM Inference Settings
   HuggingFaceLLMEndpoint: {
     envKey: "HUGGING_FACE_LLM_ENDPOINT",
-    checks: [isNotEmpty, isValidURL, validHuggingFaceEndpoint],
+    checks: [isNotEmpty, isValidURL],
   },
   HuggingFaceLLMAccessToken: {
     envKey: "HUGGING_FACE_LLM_API_KEY",
@@ -160,6 +160,10 @@ const KEY_MAPPING = {
   HuggingFaceLLMTokenLimit: {
     envKey: "HUGGING_FACE_LLM_TOKEN_LIMIT",
     checks: [nonZero],
+  },
+  HuggingFaceLLMModelPref: {
+    envKey: "HUGGING_FACE_LLM_MODEL_PREF",
+    checks: [isNotEmpty],
   },
 
   // KoboldCPP Settings
@@ -1005,12 +1009,6 @@ async function validDockerizedUrl(input = "") {
   return null;
 }
 
-function validHuggingFaceEndpoint(input = "") {
-  return input.slice(-6) !== ".cloud"
-    ? `Your HF Endpoint should end in ".cloud"`
-    : null;
-}
-
 function noRestrictedChars(input = "") {
   const regExp = new RegExp(/^[a-zA-Z0-9_\-!@$%^&*();]+$/);
   return !regExp.test(input)
@@ -1150,7 +1148,7 @@ async function updateENV(newENVs = {}, force = false, userId = null) {
 
   const validKeys = Object.keys(KEY_MAPPING);
   const ENV_KEYS = Object.keys(newENVs).filter(
-    (key) => validKeys.includes(key) && !newENVs[key].includes("******") // strip out answers where the value is all asterisks
+    (key) => validKeys.includes(key) && !String(newENVs[key]).includes("******") // strip out answers where the value is all asterisks
   );
   const newValues = {};
 

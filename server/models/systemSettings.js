@@ -554,6 +554,7 @@ const SystemSettings = {
       HuggingFaceLLMEndpoint: process.env.HUGGING_FACE_LLM_ENDPOINT,
       HuggingFaceLLMAccessToken: !!process.env.HUGGING_FACE_LLM_API_KEY,
       HuggingFaceLLMTokenLimit: process.env.HUGGING_FACE_LLM_TOKEN_LIMIT,
+      HuggingFaceLLMModelPref: process.env.HUGGING_FACE_LLM_MODEL_PREF,
 
       // KoboldCPP Keys
       KoboldCPPModelPref: process.env.KOBOLD_CPP_MODEL_PREF,

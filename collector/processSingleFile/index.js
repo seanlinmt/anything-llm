@@ -38,12 +38,16 @@ async function processSingleFile(targetFilename, options = {}, metadata = {}) {
       reason: "Filename is a reserved filename and cannot be processed.",
       documents: [],
     };
-  if (!fs.existsSync(fullFilePath))
+  if (!fs.existsSync(fullFilePath)) {
+    console.log(`[Collector] File not found: ${fullFilePath}`);
+    console.log(`[Collector] WATCH_DIRECTORY: ${WATCH_DIRECTORY}`);
+    console.log(`[Collector] targetFilename: ${targetFilename}`);
     return {
       success: false,
       reason: "File does not exist in upload directory.",
       documents: [],
     };
+  }
 
   const fileExtension = path.extname(fullFilePath).toLowerCase();
   if (fullFilePath.includes(".") && !fileExtension) {

@@ -246,10 +246,18 @@ class LocalTranscription {
           resolve(audioData)
         )
       );
-      const [audioData, transcriber] = await Promise.all([
+      const [audioDataRaw, transcriber] = await Promise.all([
         audioDataPromise,
         this.client(),
       ]);
+
+      let audioData = audioDataRaw;
+      if (audioData && !(audioData instanceof Float32Array)) {
+        this.#log(
+          `Converting audioData from ${audioData.constructor.name} to Float32Array`
+        );
+        audioData = Float32Array.from(audioData);
+      }
 
       if (!audioData) {
         this.#log(`Failed to parse content from ${filename}.`);
@@ -260,10 +268,23 @@ class LocalTranscription {
       }
 
       this.#log(`Transcribing audio data to text...`);
-      const { text } = await transcriber(audioData, {
+      let result = await transcriber(audioData, {
         chunk_length_s: 30,
         stride_length_s: 5,
       });
+
+      if (!result.text || result.text.length === 0) {
+        this.#log(
+          `Transcription result was empty. Retrying with language 'en'...`
+        );
+        result = await transcriber(audioData, {
+          chunk_length_s: 30,
+          stride_length_s: 5,
+          language: "en",
+        });
+      }
+
+      const { text } = result;
 
       return { content: text, error: null };
     } catch (error) {

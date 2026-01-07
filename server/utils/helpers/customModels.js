@@ -197,6 +197,7 @@ async function openAiModels(apiKey = null) {
         !model.id.includes("realtime") &&
         !model.id.includes("image") &&
         !model.id.includes("moderation") &&
+        !model.id.includes("whisper") &&
         !model.id.includes("transcribe")
     )
     .map((model) => {
@@ -265,6 +266,7 @@ async function localAIModels(basePath = null, apiKey = null) {
   const models = await openai.models
     .list()
     .then((results) => results.data)
+    .then((models) => models.filter((model) => !model.id.includes("whisper")))
     .catch((e) => {
       console.error(`LocalAI:listModels`, e.message);
       return [];
@@ -333,6 +335,7 @@ async function getLMStudioModels(basePath = null) {
     const models = await openai.models
       .list()
       .then((results) => results.data)
+      .then((models) => models.filter((model) => !model.id.includes("whisper")))
       .catch((e) => {
         console.error(`LMStudio:listModels`, e.message);
         return [];
@@ -392,6 +395,9 @@ async function ollamaAIModels(basePath = null, _authToken = null) {
       models.map((model) => {
         return { id: model.name };
       })
+    )
+    .then((models) =>
+      models.filter((model) => !model.id.includes("whisper"))
     )
     .catch((e) => {
       console.error(e);
@@ -864,7 +870,54 @@ async function getOpenRouterEmbeddingModels() {
   return { models, error: null };
 }
 
+function getNativeWhisperModels() {
+  const fs = require("fs");
+  const path = require("path");
+  const storageDir = process.env.STORAGE_DIR
+    ? path.resolve(process.env.STORAGE_DIR, "models")
+    : path.resolve(__dirname, "../../storage/models");
+
+  if (!fs.existsSync(storageDir)) return { models: [], error: null };
+
+  const models = [];
+  const providers = fs
+    .readdirSync(storageDir, { withFileTypes: true })
+    .filter((dirent) => dirent.isDirectory());
+
+  for (const provider of providers) {
+    const providerPath = path.join(storageDir, provider.name);
+    const modelDirs = fs
+      .readdirSync(providerPath, { withFileTypes: true })
+      .filter((dirent) => dirent.isDirectory());
+
+    for (const modelDir of modelDirs) {
+      const modelPath = path.join(providerPath, modelDir.name);
+      const configPath = path.join(modelPath, "config.json");
+
+      if (fs.existsSync(configPath)) {
+        try {
+          const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+          if (
+            ["whisper", "wav2vec2", "lite-whisper", "mpm"].includes(
+              config.model_type
+            )
+          ) {
+            models.push({
+              id: `${provider.name}/${modelDir.name}`,
+              name: `${provider.name}/${modelDir.name}`,
+            });
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+  }
+  return { models, error: null };
+}
+
 module.exports = {
   getCustomModels,
+  getNativeWhisperModels,
   SUPPORT_CUSTOM_MODELS,
 };

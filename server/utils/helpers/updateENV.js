@@ -538,7 +538,7 @@ const KEY_MAPPING = {
   },
   WhisperModelPref: {
     envKey: "WHISPER_MODEL_PREF",
-    checks: [validLocalWhisper],
+    checks: [validLocalTranscriptionModel],
     postUpdate: [],
   },
 
@@ -862,15 +862,7 @@ function supportedTTSProvider(input = "") {
   return validSelection ? null : `${input} is not a valid TTS provider.`;
 }
 
-function validLocalWhisper(input = "") {
-  const validSelection = [
-    "Xenova/whisper-small",
-    "Xenova/whisper-large",
-  ].includes(input);
-  return validSelection
-    ? null
-    : `${input} is not a valid Whisper model selection.`;
-}
+
 
 function supportedLLM(input = "") {
   const validSelection = [
@@ -1048,6 +1040,22 @@ async function downloadEmbeddingModelIfRequired(key, prevValue, nextValue) {
   if (!NativeEmbedder.supportedModels[nextValue]) return; // if the model is not supported, don't download it
   new NativeEmbedder().embedderClient();
   return false;
+}
+
+function validLocalTranscriptionModel(input = "") {
+  if (!input) return null;
+  const { getNativeWhisperModels } = require("./customModels");
+  const { models } = getNativeWhisperModels();
+  const validModels = models.map((model) => model.id);
+  // Add default models to valid list
+  validModels.push("Xenova/whisper-small");
+  validModels.push("Xenova/whisper-large");
+
+  if (!validModels.includes(input))
+    return `Invalid Whisper model selected. Must be one of ${validModels.join(
+      ", "
+    )}`;
+  return null;
 }
 
 /**

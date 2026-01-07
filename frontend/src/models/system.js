@@ -822,6 +822,22 @@ const System = {
     return newVersion;
   },
 
+  fetchLocalTranscriptionModels: async function () {
+    return await fetch(`${API_BASE}/system/local-whisper-models`, {
+      method: "GET",
+      headers: baseHeaders(),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Could not fetch local transcription models.");
+        return res.json();
+      })
+      .then((res) => res?.models || [])
+      .catch((e) => {
+        console.error(e);
+        return [];
+      });
+  },
+
   /**
    * Validates a SQL connection string.
    * @param {'postgresql'|'mysql'|'sql-server'} engine - the database engine identifier

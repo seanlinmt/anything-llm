@@ -6,12 +6,12 @@ const {
 } = require("../../utils/files");
 const { tokenizeString } = require("../../utils/tokenizer");
 const { default: slugify } = require("slugify");
-const { LocalWhisper } = require("../../utils/WhisperProviders/localWhisper");
+const { LocalTranscription } = require("../../utils/WhisperProviders/localTranscription");
 const { OpenAiWhisper } = require("../../utils/WhisperProviders/OpenAiWhisper");
 
 const WHISPER_PROVIDERS = {
   openai: OpenAiWhisper,
-  local: LocalWhisper,
+  local: LocalTranscription,
 };
 
 async function asAudio({

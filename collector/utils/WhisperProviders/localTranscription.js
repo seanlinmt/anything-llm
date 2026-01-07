@@ -7,7 +7,10 @@ const fileSize = {
   "Xenova/whisper-large": "1.56GB",
 };
 
-class LocalWhisper {
+// Supported model types for @xenova/transformers
+const XENOVA_SUPPORTED_TYPES = ["whisper"];
+
+class LocalTranscription {
   constructor({ options }) {
     this.model = options?.WhisperModelPref ?? defaultWhisper;
     this.fileSize = fileSize[this.model];
@@ -22,11 +25,50 @@ class LocalWhisper {
     if (!fs.existsSync(this.cacheDir))
       fs.mkdirSync(this.cacheDir, { recursive: true });
 
-    this.#log("Initialized.");
+    this.modelType = this.#detectModelType();
+    this.#log(`Initialized with model type: ${this.modelType}`);
   }
 
   #log(text, ...args) {
-    console.log(`\x1b[32m[LocalWhisper]\x1b[0m ${text}`, ...args);
+    console.log(`\x1b[32m[LocalTranscription]\x1b[0m ${text}`, ...args);
+  }
+
+  /**
+   * Detect the model type from config.json if available
+   * @returns {string} - Model type: "whisper", "wav2vec2", "lite-whisper", or "unknown"
+   */
+  #detectModelType() {
+    // Check if model has local config.json
+    const configPath = path.join(this.modelPath, "config.json");
+    if (fs.existsSync(configPath)) {
+      try {
+        const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+        const modelType = config.model_type || "unknown";
+        this.#log(`Detected model type from config: ${modelType}`);
+        return modelType;
+      } catch (e) {
+        this.#log(`Could not parse config.json: ${e.message}`);
+      }
+    }
+
+    // Infer from model name (check more specific patterns first)
+    const modelLower = this.model.toLowerCase();
+    if (modelLower.includes("lite-whisper") || modelLower.includes("litewhisper")) return "lite-whisper";
+    if (modelLower.includes("wav2vec")) return "wav2vec2";
+    if (modelLower.includes("mpm")) return "mpm"; // MPM models are wav2vec2-based
+    if (modelLower.includes("whisper")) return "whisper";
+
+    return "whisper"; // Default assumption
+  }
+
+  /**
+   * Check if an ONNX export exists for this model
+   * @returns {boolean}
+   */
+  #hasOnnxExport() {
+    const onnxPath = path.join(this.modelPath, "onnx");
+    const encoderPath = path.join(onnxPath, "encoder_model_quantized.onnx");
+    return fs.existsSync(encoderPath);
   }
 
   #validateAudioFile(wavFile) {
@@ -115,10 +157,34 @@ class LocalWhisper {
     }
   }
 
+  /**
+   * Get appropriate client/transcriber based on model type
+   */
   async client() {
+    // Check if model type is supported by @xenova/transformers
+    if (!XENOVA_SUPPORTED_TYPES.includes(this.modelType)) {
+      // For non-whisper models, check for ONNX exports
+      if (this.#hasOnnxExport()) {
+        this.#log(`Using ONNX Runtime for ${this.modelType} model`);
+        return this.#createOnnxClient();
+      }
+
+      // Model type not supported and no ONNX export
+      const supportedStr = XENOVA_SUPPORTED_TYPES.join(", ");
+      throw new Error(
+        `Model type '${this.modelType}' is not directly supported by the browser-based transcription. ` +
+          `Supported types: ${supportedStr}. ` +
+          `For wav2vec2 or lite-whisper models, you need to first convert them to ONNX format using ` +
+          `the conversion scripts in the tools directory: ` +
+          `'python tools/convert_wav2vec2_to_ONNX.py <model_path>' or ` +
+          `'python tools/convert_lite_whisper_to_ONNX.py <model_path>'`
+      );
+    }
+
+    // Standard whisper models - use @xenova/transformers
     if (!fs.existsSync(this.modelPath)) {
       this.#log(
-        `The native whisper model has never been run and will be downloaded right now. Subsequent runs will be faster. (~${this.fileSize})`
+        `The transcription model has never been run and will be downloaded right now. Subsequent runs will be faster. (~${this.fileSize})`
       );
     }
 
@@ -148,15 +214,29 @@ class LocalWhisper {
       let errMsg = error.message;
       if (errMsg.includes("Could not locate file")) {
         errMsg =
-          "The native whisper model failed to download from the huggingface.co CDN. Your internet connection may be unstable or blocked by Huggingface.co - you will need to download the model manually and place it in the storage/models folder to use local Whisper transcription.";
+          "The transcription model failed to download from the huggingface.co CDN. Your internet connection may be unstable or blocked by Huggingface.co - you will need to download the model manually and place it in the storage/models folder to use local transcription.";
       }
 
-      this.#log(
-        `Failed to load the native whisper model: ${errMsg}`,
-        error.stack
-      );
+      this.#log(`Failed to load the transcription model: ${errMsg}`, error.stack);
       throw new Error(errMsg);
     }
+  }
+
+  /**
+   * Create ONNX Runtime client for wav2vec2/lite-whisper models
+   */
+  async #createOnnxClient() {
+    const { createOnnxTranscriber } = require("./onnxTranscriber");
+    
+    this.#log(`Creating ONNX transcriber for ${this.modelType} model`);
+    
+    const transcriber = createOnnxTranscriber(this.modelPath, this.modelType);
+    await transcriber.initialize();
+    
+    // Return a function that matches the transformers.js pipeline interface
+    return async (audioData, options = {}) => {
+      return await transcriber.transcribe(audioData);
+    };
   }
 
   async processFile(fullFilePath, filename) {
@@ -193,5 +273,5 @@ class LocalWhisper {
 }
 
 module.exports = {
-  LocalWhisper,
+  LocalTranscription,
 };

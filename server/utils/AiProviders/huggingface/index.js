@@ -40,6 +40,7 @@ class HuggingFaceLLM {
 
     this.embedder = embedder ?? new NativeEmbedder();
     this.defaultTemp = 0.2;
+    this.baseURL = baseURL;
   }
 
   #appendContext(contextTexts = []) {
@@ -128,6 +129,7 @@ class HuggingFaceLLM {
   async getChatCompletion(messages = null, { temperature = 0.7 }) {
     this.log(`Getting chat completion for model ${this.model} with temperature ${temperature}`);
     this.log(`Messages:`, JSON.stringify(messages, null, 2));
+    this.log(`Categorized Request URL: ${this.baseURL}/chat/completions`);
 
     let result;
     try {
@@ -172,6 +174,7 @@ class HuggingFaceLLM {
   async streamGetChatCompletion(messages = null, { temperature = 0.7 }) {
     this.log(`Streaming chat completion for model ${this.model} with temperature ${temperature}`);
     this.log(`Messages:`, JSON.stringify(messages, null, 2));
+    this.log(`Categorized Request URL: ${this.baseURL}/chat/completions`);
 
     const measuredStreamRequest = await this.#retryable(async () => {
       return await LLMPerformanceMonitor.measureStream({

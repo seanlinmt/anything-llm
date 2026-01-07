@@ -32,7 +32,7 @@ const {
 const { Telemetry } = require("../models/telemetry");
 const { WelcomeMessages } = require("../models/welcomeMessages");
 const { ApiKey } = require("../models/apiKeys");
-const { getCustomModels } = require("../utils/helpers/customModels");
+const { getCustomModels, getNativeWhisperModels } = require("../utils/helpers/customModels");
 const { WorkspaceChats } = require("../models/workspaceChats");
 const {
   flexUserRoleValid,
@@ -416,6 +416,20 @@ function systemEndpoints(app) {
           ? await VectorDb.namespaceCount(query.slug)
           : await VectorDb.totalVectors();
         response.status(200).json({ vectorCount });
+      } catch (e) {
+        console.error(e.message, e);
+        response.sendStatus(500).end();
+      }
+    }
+  );
+
+  app.get(
+    "/system/local-whisper-models",
+    [validatedRequest, flexUserRoleValid([ROLES.admin, ROLES.manager])],
+    async (request, response) => {
+      try {
+        const { models } = getNativeWhisperModels();
+        response.status(200).json({ models });
       } catch (e) {
         console.error(e.message, e);
         response.sendStatus(500).end();

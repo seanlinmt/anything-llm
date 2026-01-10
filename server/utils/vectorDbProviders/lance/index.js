@@ -13,9 +13,8 @@ const { NativeEmbeddingReranker } = require("../../EmbeddingRerankers/native");
  */
 
 const LanceDb = {
-  uri: `${
-    !!process.env.STORAGE_DIR ? `${process.env.STORAGE_DIR}/` : "./storage/"
-  }lancedb`,
+  uri: `${!!process.env.STORAGE_DIR ? `${process.env.STORAGE_DIR}/` : "./storage/"
+    }lancedb`,
   name: "LanceDb",
 
   /** @returns {Promise<{client: LanceClient}>} */
@@ -102,9 +101,11 @@ const LanceDb = {
       10,
       Math.min(50, Math.ceil(totalEmbeddings * 0.1))
     );
+    const refineFactor = parseInt(process.env.LANCEDB_REFINE_FACTOR) || 10;
     const vectorSearchResults = await collection
       .vectorSearch(queryVector)
       .distanceType("cosine")
+      .refine_factor(refineFactor)
       .limit(searchLimit)
       .toArray();
 
@@ -166,9 +167,11 @@ const LanceDb = {
       scores: [],
     };
 
+    const refineFactor = parseInt(process.env.LANCEDB_REFINE_FACTOR) || 10;
     const response = await collection
       .vectorSearch(queryVector)
       .distanceType("cosine")
+      .refine_factor(refineFactor)
       .limit(topN)
       .toArray();
 
@@ -406,22 +409,22 @@ const LanceDb = {
     const queryVector = await LLMConnector.embedTextInput(input);
     const result = rerank
       ? await this.rerankedSimilarityResponse({
-          client,
-          namespace,
-          query: input,
-          queryVector,
-          similarityThreshold,
-          topN,
-          filterIdentifiers,
-        })
+        client,
+        namespace,
+        query: input,
+        queryVector,
+        similarityThreshold,
+        topN,
+        filterIdentifiers,
+      })
       : await this.similarityResponse({
-          client,
-          namespace,
-          queryVector,
-          similarityThreshold,
-          topN,
-          filterIdentifiers,
-        });
+        client,
+        namespace,
+        queryVector,
+        similarityThreshold,
+        topN,
+        filterIdentifiers,
+      });
 
     const { contextTexts, sourceDocuments } = result;
     const sources = sourceDocuments.map((metadata, i) => {
@@ -454,6 +457,22 @@ const LanceDb = {
     return {
       message: `Namespace ${namespace} was deleted.`,
     };
+  },
+  compact: async function () {
+    const { client } = await this.connect();
+    const tables = await client.tableNames();
+    console.log(`[LanceDB] Starting compaction for ${tables.length} tables...`);
+    for (const tableName of tables) {
+      try {
+        const table = await client.openTable(tableName);
+        await table.optimize(); // Default optimization (compact)
+        console.log(`[LanceDB] Compacted table: ${tableName}`);
+      } catch (e) {
+        console.error(`[LanceDB] Failed to compact table ${tableName}:`, e);
+      }
+    }
+    console.log(`[LanceDB] Compaction finished.`);
+    return true;
   },
   reset: async function () {
     const { client } = await this.connect();

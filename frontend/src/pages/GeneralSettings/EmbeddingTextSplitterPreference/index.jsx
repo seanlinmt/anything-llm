@@ -49,6 +49,7 @@ export default function EmbeddingTextSplitterPreference() {
         document.getElementById("text-splitter-chunking-form")
       );
       await Admin.updateSystemPreferences({
+        text_splitter_preference: form.get("text_splitter_preference"),
         text_splitter_chunk_size: isNullOrNaN(
           form.get("text_splitter_chunk_size")
         )
@@ -62,9 +63,9 @@ export default function EmbeddingTextSplitterPreference() {
       });
       setHasChanges(false);
       closeModal();
-      showToast("Text chunking strategy settings saved.", "success");
+      showToast("Chunking settings saved.", "success");
     } catch (error) {
-      showToast("Failed to save text chunking strategy settings.", "error");
+      showToast("Failed to save chunking settings.", "error");
     } finally {
       setSaving(false);
     }
@@ -121,6 +122,38 @@ export default function EmbeddingTextSplitterPreference() {
                   </CTAButton>
                 )}
               </div>
+
+
+              <div className="flex flex-col gap-y-4 mt-8">
+                <div className="flex flex-col max-w-[300px]">
+                  <div className="flex flex-col gap-y-2 mb-4">
+                    <label className="text-white text-sm font-semibold block">
+                      Text Splitter Method
+                    </label>
+                    <p className="text-xs text-white/60">
+                      Select the method used to split text documents into
+                      chunks.
+                    </p>
+                  </div>
+                  <select
+                    name="text_splitter_preference"
+                    defaultValue={
+                      settings?.text_splitter_preference || "recursive"
+                    }
+                    className="border-none bg-theme-settings-input-bg text-white placeholder:text-theme-settings-input-placeholder text-sm rounded-lg focus:outline-primary-button active:outline-primary-button outline-none block w-full p-2.5"
+                  >
+                    <option value="recursive">
+                      Recursive Character Text Splitter (Default)
+                    </option>
+                    <option value="structure">Structure Aware (Markdown)</option>
+                    <option value="semantic">
+                      Semantic Chunking (Experimental)
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+
 
               <div className="flex flex-col gap-y-4 mt-8">
                 <div className="flex flex-col max-w-[300px]">

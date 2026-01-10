@@ -21,10 +21,10 @@ class HuggingFaceLLM {
     // We set to 'tgi' so that endpoint for HF can accept message format
     this.model =
       _modelPreference || process.env.HUGGING_FACE_LLM_MODEL_PREF || "tgi";
-    
+
     const endpoint = process.env.HUGGING_FACE_LLM_ENDPOINT;
     const baseURL = endpoint.endsWith("/v1") ? endpoint : `${endpoint}/v1`;
-    
+
     this.log(`Endpoint: ${endpoint}`);
     this.log(`BaseURL: ${baseURL}`);
 
@@ -127,7 +127,9 @@ class HuggingFaceLLM {
   }
 
   async getChatCompletion(messages = null, { temperature = 0.7 }) {
-    this.log(`Getting chat completion for model ${this.model} with temperature ${temperature}`);
+    this.log(
+      `Getting chat completion for model ${this.model} with temperature ${temperature}`
+    );
     this.log(`Messages:`, JSON.stringify(messages, null, 2));
     this.log(`Categorized Request URL: ${this.baseURL}/chat/completions`);
 
@@ -172,7 +174,9 @@ class HuggingFaceLLM {
   }
 
   async streamGetChatCompletion(messages = null, { temperature = 0.7 }) {
-    this.log(`Streaming chat completion for model ${this.model} with temperature ${temperature}`);
+    this.log(
+      `Streaming chat completion for model ${this.model} with temperature ${temperature}`
+    );
     this.log(`Messages:`, JSON.stringify(messages, null, 2));
     this.log(`Categorized Request URL: ${this.baseURL}/chat/completions`);
 

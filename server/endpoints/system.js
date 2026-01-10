@@ -32,7 +32,10 @@ const {
 const { Telemetry } = require("../models/telemetry");
 const { WelcomeMessages } = require("../models/welcomeMessages");
 const { ApiKey } = require("../models/apiKeys");
-const { getCustomModels, getNativeWhisperModels } = require("../utils/helpers/customModels");
+const {
+  getCustomModels,
+  getNativeWhisperModels,
+} = require("../utils/helpers/customModels");
 const { WorkspaceChats } = require("../models/workspaceChats");
 const {
   flexUserRoleValid,

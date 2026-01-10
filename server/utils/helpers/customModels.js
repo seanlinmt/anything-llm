@@ -396,9 +396,7 @@ async function ollamaAIModels(basePath = null, _authToken = null) {
         return { id: model.name };
       })
     )
-    .then((models) =>
-      models.filter((model) => !model.id.includes("whisper"))
-    )
+    .then((models) => models.filter((model) => !model.id.includes("whisper")))
     .catch((e) => {
       console.error(e);
       return [];

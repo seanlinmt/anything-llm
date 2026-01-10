@@ -151,6 +151,11 @@ const PineconeDB = {
         ),
         chunkHeaderMeta: TextSplitter.buildHeaderMeta(metadata),
         chunkPrefix: EmbedderEngine?.embeddingPrefix,
+        splitByAlgorithm: await SystemSettings.getValueOrFallback(
+          { label: "text_splitter_preference" },
+          "recursive"
+        ),
+        embedderApi: EmbedderEngine,
       });
       const textChunks = await textSplitter.splitText(pageContent);
 

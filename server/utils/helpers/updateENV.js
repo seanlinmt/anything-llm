@@ -866,8 +866,6 @@ function supportedTTSProvider(input = "") {
   return validSelection ? null : `${input} is not a valid TTS provider.`;
 }
 
-
-
 function supportedLLM(input = "") {
   const validSelection = [
     "openai",

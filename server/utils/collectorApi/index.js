@@ -40,6 +40,7 @@ class CollectorApi {
   #attachOptions() {
     return {
       whisperProvider: process.env.WHISPER_PROVIDER || "local",
+      whisperBasePath: process.env.WHISPER_BASE_PATH,
       WhisperModelPref: process.env.WHISPER_MODEL_PREF,
       openAiKey: process.env.OPEN_AI_KEY || null,
       ocr: {

@@ -14,7 +14,10 @@ export default function NativeTranscriptionOptions({ settings }) {
   useEffect(() => {
     async function fetchModels() {
       const localModels = await System.fetchLocalTranscriptionModels();
-      const defaults = ["Xenova/whisper-small", "Xenova/whisper-large"];
+      const defaults = [
+        "Xenova/whisper-small",
+        "Xenova/whisper-large",
+      ];
       const merged = [...localModels];
 
       defaults.forEach((def) => {

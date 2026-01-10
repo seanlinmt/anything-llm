@@ -8,6 +8,95 @@
 const fs = require("fs");
 const path = require("path");
 
+// Chunking configuration (matches @xenova/transformers pipeline defaults)
+const CHUNK_LENGTH_S = 30; // Process audio in 30-second chunks
+const STRIDE_LENGTH_S = 5; // 5-second overlap between chunks
+const SAMPLE_RATE = 16000; // Expected sample rate
+
+/**
+ * Split audio data into overlapping chunks for processing
+ * @param {Float32Array} audioData - Audio samples at 16kHz
+ * @param {number} chunkLengthS - Chunk length in seconds
+ * @param {number} strideLengthS - Overlap/stride length in seconds
+ * @returns {Array<{data: Float32Array, start: number, end: number}>} - Array of chunks with position info
+ */
+function chunkAudio(audioData, chunkLengthS = CHUNK_LENGTH_S, strideLengthS = STRIDE_LENGTH_S) {
+  const chunkSamples = chunkLengthS * SAMPLE_RATE;
+  const strideSamples = strideLengthS * SAMPLE_RATE;
+  const stepSamples = chunkSamples - strideSamples;
+
+  const chunks = [];
+  let start = 0;
+
+  while (start < audioData.length) {
+    const end = Math.min(start + chunkSamples, audioData.length);
+    const chunkData = audioData.slice(start, end);
+
+    // Pad the last chunk if it's shorter than expected
+    let paddedChunk = chunkData;
+    if (chunkData.length < chunkSamples && chunks.length > 0) {
+      // Only pad if this isn't the only chunk and it's significantly short
+      paddedChunk = new Float32Array(chunkSamples);
+      paddedChunk.set(chunkData);
+    }
+
+    chunks.push({
+      data: paddedChunk,
+      start: start / SAMPLE_RATE,
+      end: end / SAMPLE_RATE,
+      isLast: end >= audioData.length,
+    });
+
+    start += stepSamples;
+
+    // Break if we've covered all the audio
+    if (end >= audioData.length) break;
+  }
+
+  return chunks;
+}
+
+/**
+ * Merge overlapping transcription results from chunks
+ * Uses simple concatenation with deduplication at chunk boundaries
+ * @param {Array<{text: string, start: number, end: number}>} chunkResults 
+ * @returns {string} - Merged transcription text
+ */
+function mergeChunkResults(chunkResults) {
+  if (chunkResults.length === 0) return "";
+  if (chunkResults.length === 1) return chunkResults[0].text.trim();
+
+  // Simple approach: concatenate with space, removing duplicate words at boundaries
+  let mergedText = chunkResults[0].text.trim();
+
+  for (let i = 1; i < chunkResults.length; i++) {
+    const currentText = chunkResults[i].text.trim();
+    if (!currentText) continue;
+
+    // Get last few words from previous chunk and first few words from current
+    const prevWords = mergedText.split(/\s+/).slice(-3);
+    const currWords = currentText.split(/\s+/);
+
+    // Find overlap by checking if current chunk starts with words from previous
+    let overlapIndex = 0;
+    for (let j = 1; j <= Math.min(prevWords.length, currWords.length); j++) {
+      const prevEnd = prevWords.slice(-j).join(" ").toLowerCase();
+      const currStart = currWords.slice(0, j).join(" ").toLowerCase();
+      if (prevEnd === currStart) {
+        overlapIndex = j;
+      }
+    }
+
+    // Append current text, skipping overlapping words
+    const textToAppend = currWords.slice(overlapIndex).join(" ");
+    if (textToAppend) {
+      mergedText += " " + textToAppend;
+    }
+  }
+
+  return mergedText.replace(/\s+/g, " ").trim();
+}
+
 /**
  * Load ONNX Runtime - lazy load to avoid issues if not installed
  */
@@ -36,7 +125,7 @@ class Wav2Vec2OnnxTranscriber {
 
   async initialize() {
     const ort = getOnnxRuntime();
-    
+
     if (!fs.existsSync(this.encoderPath)) {
       throw new Error(
         `ONNX encoder model not found at ${this.encoderPath}. ` +
@@ -45,7 +134,7 @@ class Wav2Vec2OnnxTranscriber {
     }
 
     console.log(`[Wav2Vec2ONNX] Loading model from ${this.encoderPath}`);
-    
+
     // Create session with CUDA provider if available, otherwise CPU
     const sessionOptions = {
       executionProviders: ["CUDAExecutionProvider", "CPUExecutionProvider"],
@@ -65,7 +154,7 @@ class Wav2Vec2OnnxTranscriber {
 
     // Load vocabulary for CTC decoding
     await this.loadVocab();
-    
+
     console.log("[Wav2Vec2ONNX] Model loaded successfully");
   }
 
@@ -152,7 +241,46 @@ class Wav2Vec2OnnxTranscriber {
     }
 
     const ort = getOnnxRuntime();
-    
+    const audioDurationS = audioData.length / SAMPLE_RATE;
+
+    // For short audio (less than chunk size), process directly without chunking
+    if (audioDurationS <= CHUNK_LENGTH_S) {
+      return await this.#transcribeChunk(audioData, ort);
+    }
+
+    // For longer audio, use chunking
+    console.log(`[Wav2Vec2ONNX] Audio is ${audioDurationS.toFixed(1)}s, using chunked transcription`);
+    const chunks = chunkAudio(audioData);
+    console.log(`[Wav2Vec2ONNX] Split into ${chunks.length} chunks`);
+
+    const chunkResults = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      console.log(`[Wav2Vec2ONNX] Processing chunk ${i + 1}/${chunks.length} (${chunk.start.toFixed(1)}s - ${chunk.end.toFixed(1)}s)`);
+
+      try {
+        const result = await this.#transcribeChunk(chunk.data, ort);
+        chunkResults.push({
+          text: result.text,
+          start: chunk.start,
+          end: chunk.end,
+        });
+      } catch (e) {
+        console.error(`[Wav2Vec2ONNX] Failed to transcribe chunk ${i + 1}:`, e.message);
+        // Continue with other chunks
+      }
+    }
+
+    // Merge chunk results
+    const mergedText = mergeChunkResults(chunkResults);
+    return { text: mergedText };
+  }
+
+  /**
+   * Transcribe a single chunk of audio
+   * @private
+   */
+  async #transcribeChunk(audioData, ort) {
     // Create input tensor - wav2vec2 expects [batch, samples]
     const inputTensor = new ort.Tensor(
       "float32",
@@ -163,7 +291,7 @@ class Wav2Vec2OnnxTranscriber {
     // Run inference
     const feeds = { input_values: inputTensor };
     const results = await this.session.run(feeds);
-    
+
     // Get logits output
     const logits = results.logits;
     const logitsData = logits.data;
@@ -202,7 +330,7 @@ class LiteWhisperOnnxTranscriber {
 
   async initialize() {
     const ort = getOnnxRuntime();
-    
+
     if (!fs.existsSync(this.encoderPath)) {
       throw new Error(
         `ONNX encoder model not found at ${this.encoderPath}. ` +
@@ -232,7 +360,7 @@ class LiteWhisperOnnxTranscriber {
     // For now, we'll use a simplified approach or fall back to CTC-style decoding
     console.log("[LiteWhisperONNX] Model loaded successfully");
     console.log("[LiteWhisperONNX] Warning: Full autoregressive decoding not yet implemented");
-    
+
     await this.loadTokenizer();
   }
 
@@ -266,7 +394,7 @@ class LiteWhisperOnnxTranscriber {
     const nFft = 400;
     const maxDuration = 30; // 30 seconds max
     const maxSamples = maxDuration * sampleRate;
-    
+
     // Pad or truncate audio to 30 seconds
     let audio = audioData;
     if (audio.length > maxSamples) {
@@ -281,19 +409,19 @@ class LiteWhisperOnnxTranscriber {
     // In production, you'd use a proper mel spectrogram computation
     const numFrames = Math.floor(audio.length / hopLength);
     const melSpec = new Float32Array(nMels * numFrames);
-    
+
     // Simple energy-based approximation (not accurate, but functional)
     for (let t = 0; t < numFrames; t++) {
       const start = t * hopLength;
       const end = Math.min(start + winLength, audio.length);
-      
+
       // Compute frame energy
       let energy = 0;
       for (let i = start; i < end; i++) {
         energy += audio[i] * audio[i];
       }
       energy = Math.log(energy + 1e-10);
-      
+
       // Distribute across mel bins (simplified)
       for (let m = 0; m < nMels; m++) {
         melSpec[t * nMels + m] = energy * (0.5 + 0.5 * Math.sin(m * Math.PI / nMels));
@@ -309,27 +437,66 @@ class LiteWhisperOnnxTranscriber {
     }
 
     const ort = getOnnxRuntime();
-    
-    // Compute mel spectrogram
+    const audioDurationS = audioData.length / SAMPLE_RATE;
+
+    // For short audio (less than chunk size), process directly without chunking
+    if (audioDurationS <= CHUNK_LENGTH_S) {
+      return await this.#transcribeChunk(audioData, ort);
+    }
+
+    // For longer audio, use chunking
+    console.log(`[LiteWhisperONNX] Audio is ${audioDurationS.toFixed(1)}s, using chunked transcription`);
+    const chunks = chunkAudio(audioData);
+    console.log(`[LiteWhisperONNX] Split into ${chunks.length} chunks`);
+
+    const chunkResults = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      console.log(`[LiteWhisperONNX] Processing chunk ${i + 1}/${chunks.length} (${chunk.start.toFixed(1)}s - ${chunk.end.toFixed(1)}s)`);
+
+      try {
+        const result = await this.#transcribeChunk(chunk.data, ort);
+        chunkResults.push({
+          text: result.text,
+          start: chunk.start,
+          end: chunk.end,
+        });
+      } catch (e) {
+        console.error(`[LiteWhisperONNX] Failed to transcribe chunk ${i + 1}:`, e.message);
+        // Continue with other chunks
+      }
+    }
+
+    // Merge chunk results
+    const mergedText = mergeChunkResults(chunkResults);
+    return { text: mergedText };
+  }
+
+  /**
+   * Transcribe a single chunk of audio (up to 30 seconds)
+   * @private
+   */
+  async #transcribeChunk(audioData, ort) {
+    // Compute mel spectrogram (handles padding/truncation to 30s internally)
     const mel = this.computeMelSpectrogram(audioData);
-    
+
     // Create input tensor for encoder
     const inputTensor = new ort.Tensor("float32", mel.data, mel.shape);
 
     // Run encoder
     const encoderFeeds = { input_features: inputTensor };
-    
+
     try {
       const encoderResults = await this.encoderSession.run(encoderFeeds);
       const encoderOutput = encoderResults.last_hidden_state;
-      
+
       // For now, return a placeholder since full autoregressive generation
       // requires the decoder loop with beam search
       console.log("[LiteWhisperONNX] Encoder output shape:", encoderOutput.dims);
-      
-      return { 
+
+      return {
         text: "[Lite-Whisper encoder ran successfully, but full decoder generation is not yet implemented. " +
-              "Please use a standard Whisper model for full transcription.]"
+          "Please use a standard Whisper model for full transcription.]"
       };
     } catch (e) {
       console.error("[LiteWhisperONNX] Inference error:", e.message);

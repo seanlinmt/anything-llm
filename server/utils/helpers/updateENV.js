@@ -541,6 +541,10 @@ const KEY_MAPPING = {
     checks: [validLocalTranscriptionModel],
     postUpdate: [],
   },
+  OpenAiTranscriptionBasePath: {
+    envKey: "WHISPER_BASE_PATH",
+    checks: [],
+  },
 
   // System Settings
   AuthToken: {
@@ -1050,6 +1054,9 @@ function validLocalTranscriptionModel(input = "") {
   // Add default models to valid list
   validModels.push("Xenova/whisper-small");
   validModels.push("Xenova/whisper-large");
+  validModels.push("nvidia/stt_rw_conformer_ctc_large");
+  validModels.push("nvidia/stt_rw_conformer_transducer_large");
+  validModels.push("whisper-1");
 
   if (!validModels.includes(input))
     return `Invalid Whisper model selected. Must be one of ${validModels.join(

@@ -3,12 +3,19 @@ const fs = require("fs");
 class OpenAiWhisper {
   constructor({ options }) {
     const { OpenAI: OpenAIApi } = require("openai");
-    if (!options.openAiKey) throw new Error("No OpenAI API key was set.");
+    const modelPref = options.WhisperModelPref || "whisper-1";
+    // Check if the model is one of our custom supported ones that needs the local backend
+    const shouldUseCustomBase = !!options.whisperBasePath;
+    if (!shouldUseCustomBase && !options.openAiKey)
+      throw new Error("No OpenAI API key was set.");
 
     this.openai = new OpenAIApi({
-      apiKey: options.openAiKey,
+      apiKey: options.openAiKey || "sk-placeholder",
+      baseURL: shouldUseCustomBase
+        ? options.whisperBasePath
+        : "https://api.openai.com/v1",
     });
-    this.model = "whisper-1";
+    this.model = modelPref;
     this.temperature = 0;
     this.#log("Initialized.");
   }

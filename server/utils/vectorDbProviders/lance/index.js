@@ -105,7 +105,7 @@ const LanceDb = {
     const vectorSearchResults = await collection
       .vectorSearch(queryVector)
       .distanceType("cosine")
-      .refine_factor(refineFactor)
+      .refineFactor(refineFactor)
       .limit(searchLimit)
       .toArray();
 
@@ -171,7 +171,7 @@ const LanceDb = {
     const response = await collection
       .vectorSearch(queryVector)
       .distanceType("cosine")
-      .refine_factor(refineFactor)
+      .refineFactor(refineFactor)
       .limit(topN)
       .toArray();
 

@@ -50,7 +50,33 @@ const System = {
         return res.json();
       })
       .then((res) => res.localFiles)
-      .catch(() => null);
+      .catch((e) => null);
+  },
+  fetchDocumentChunks: async function (name) {
+    const url = new URL(`${fullApiUrl()}/system/document-chunks`);
+    url.searchParams.append("name", name);
+    return await fetch(url.toString(), {
+      headers: baseHeaders(),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Could not find document chunks.");
+        return res.json();
+      })
+      .then((res) => res.chunks)
+      .catch(() => []);
+  },
+  previewDocumentChunks: async function (data) {
+    return await fetch(`${API_BASE}/system/document-chunks/preview`, {
+      method: "POST",
+      headers: baseHeaders(),
+      body: JSON.stringify(data),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Could not preview document chunks.");
+        return res.json();
+      })
+      .then((res) => res.chunks)
+      .catch(() => []);
   },
   needsAuthCheck: function () {
     const lastAuthCheck = window.localStorage.getItem(AUTH_TIMESTAMP);

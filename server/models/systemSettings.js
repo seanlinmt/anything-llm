@@ -59,6 +59,9 @@ const SystemSettings = {
     // beta feature flags
     "experimental_live_file_sync",
 
+    // Translation Settings
+    "TranslationModelPref",
+
     // Hub settings
     "hub_api_key",
   ],
@@ -312,6 +315,11 @@ const SystemSettings = {
       SimpleSSOEnabled: "SIMPLE_SSO_ENABLED" in process.env || false,
       SimpleSSONoLogin: "SIMPLE_SSO_NO_LOGIN" in process.env || false,
       SimpleSSONoLoginRedirect: this.simpleSSO.noLoginRedirect(),
+
+      // --------------------------------------------------------
+      // Translation Settings
+      // --------------------------------------------------------
+      TranslationModelPref: process.env.TRANSLATION_MODEL_PREF || "Xenova/nllb-200",
     };
   },
 
@@ -703,7 +711,7 @@ const SystemSettings = {
       try {
         let url = new URL(process.env.SIMPLE_SSO_NO_LOGIN_REDIRECT);
         return url.toString();
-      } catch {}
+      } catch { }
 
       // if the no login redirect is not a valid URL or is not set, return null
       return null;

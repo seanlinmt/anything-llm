@@ -56,7 +56,7 @@ const translationPlugin = {
                 const { pipeline } = require("@xenova/transformers");
                 translator = await pipeline(
                   "translation",
-                  "Xenova/nllb-200-distilled-600M"
+                  "Xenova/nllb-200"
                 );
               }
 

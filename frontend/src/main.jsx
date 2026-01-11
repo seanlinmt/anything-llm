@@ -101,6 +101,17 @@ const router = createBrowserRouter([
         },
       },
       {
+        path: "/settings/translation-preference",
+        lazy: async () => {
+          const { default: TranslationPreference } = await import(
+            "@/pages/GeneralSettings/TranslationPreference"
+          );
+          return {
+            element: <AdminRoute Component={TranslationPreference} />,
+          };
+        },
+      },
+      {
         path: "/settings/embedding-preference",
         lazy: async () => {
           const { default: GeneralEmbeddingPreference } = await import(

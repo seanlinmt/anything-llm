@@ -797,6 +797,12 @@ const KEY_MAPPING = {
     envKey: "GITEE_AI_MODEL_TOKEN_LIMIT",
     checks: [nonZero],
   },
+
+  // Translation Options
+  TranslationModelPref: {
+    envKey: "TRANSLATION_MODEL_PREF",
+    checks: [],
+  },
 };
 
 function isNotEmpty(input = "") {

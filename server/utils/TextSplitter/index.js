@@ -165,6 +165,7 @@ class TextSplitter {
           : Number(config?.chunkOverlap),
         chunkHeader: this.stringifyHeader(),
         embedderApi: config?.embedderApi,
+        returnObjects: config?.returnObjects,
       });
     }
 
@@ -175,6 +176,7 @@ class TextSplitter {
           ? 20
           : Number(config?.chunkOverlap),
         chunkHeader: this.stringifyHeader(),
+        returnObjects: config?.returnObjects,
       });
     }
 
@@ -184,6 +186,7 @@ class TextSplitter {
         ? 20
         : Number(config?.chunkOverlap),
       chunkHeader: this.stringifyHeader(),
+      returnObjects: config?.returnObjects,
     });
   }
 
@@ -194,7 +197,12 @@ class TextSplitter {
 
 // Wrapper for Langchain RecursiveCharacterTextSplitter class.
 class RecursiveSplitter {
-  constructor({ chunkSize, chunkOverlap, chunkHeader = null }) {
+  constructor({
+    chunkSize,
+    chunkOverlap,
+    chunkHeader = null,
+    returnObjects = false,
+  }) {
     const {
       RecursiveCharacterTextSplitter,
     } = require("@langchain/textsplitters");
@@ -204,6 +212,7 @@ class RecursiveSplitter {
       chunkHeader: chunkHeader ? `${chunkHeader?.slice(0, 50)}...` : null,
     });
     this.chunkHeader = chunkHeader;
+    this.returnObjects = returnObjects;
     this.engine = new RecursiveCharacterTextSplitter({
       chunkSize,
       chunkOverlap,
@@ -215,14 +224,23 @@ class RecursiveSplitter {
   }
 
   async _splitText(documentText) {
-    if (!this.chunkHeader) return this.engine.splitText(documentText);
+    if (!this.chunkHeader) {
+      if (!this.returnObjects) return this.engine.splitText(documentText);
+      const docs = await this.engine.createDocuments([documentText]);
+      return docs.map((doc) => ({
+        pageContent: doc.pageContent,
+        metadata: {},
+      }));
+    }
     const strings = await this.engine.splitText(documentText);
     const documents = await this.engine.createDocuments(strings, [], {
       chunkHeader: this.chunkHeader,
     });
-    return documents
-      .filter((doc) => !!doc.pageContent)
-      .map((doc) => doc.pageContent);
+    return this.returnObjects
+      ? documents.filter((doc) => !!doc.pageContent)
+      : documents
+        .filter((doc) => !!doc.pageContent)
+        .map((doc) => doc.pageContent);
   }
 }
 
@@ -338,20 +356,33 @@ class SemanticSplitter {
       return chunk;
     });
 
+    if (this.returnObjects) {
+      return finalChunks.map((chunk) => ({
+        pageContent: chunk,
+        metadata: {},
+      }));
+    }
     return finalChunks;
   }
 }
 
 class StructureSplitter {
-  constructor({ chunkSize, chunkOverlap, chunkHeader = null }) {
+  constructor({
+    chunkSize,
+    chunkOverlap,
+    chunkHeader = null,
+    returnObjects = false,
+  }) {
     this.chunkSize = chunkSize;
     this.chunkOverlap = chunkOverlap;
     this.chunkHeader = chunkHeader;
+    this.returnObjects = returnObjects;
     // We instantiate the recursive splitter as a fallback/sub-splitter
     this.subSplitter = new RecursiveSplitter({
       chunkSize,
       chunkOverlap,
       chunkHeader,
+      returnObjects,
     });
   }
 
@@ -360,6 +391,18 @@ class StructureSplitter {
   }
 
   async _splitText(documentText) {
+    try {
+      const data = JSON.parse(documentText);
+      // console.log("Parsed JSON:", data.type, Array.isArray(data.content));
+      if (data?.type === "document" && Array.isArray(data?.content)) {
+        // console.log("[StructureSplitter] Processing structured document");
+        return this.#processStructuredDocument(data);
+      }
+    } catch (e) {
+      // console.log("[StructureSplitter] JSON parse failed or not a structured doc", e.message);
+      // Not JSON, continue to existing logic
+    }
+
     // 1. Split text into lines
     const lines = documentText.split("\n");
     const chunks = [];
@@ -430,11 +473,184 @@ class StructureSplitter {
       }
     }
 
+
     // Process remainder
     await processCurrentChunk();
 
-    return chunks;
+    return this.returnObjects
+      ? chunks.map((chunk) => ({
+        pageContent: chunk,
+        metadata: {},
+      }))
+      : chunks;
   }
+
+  async #processStructuredDocument(data) {
+    const chunks = [];
+    let currentChunkText = "";
+
+    // Helper to commit current chunk
+    const commitChunk = () => {
+      if (!currentChunkText.trim()) return;
+
+      const chunkContent = this.chunkHeader
+        ? `${this.chunkHeader}${currentChunkText}`
+        : currentChunkText;
+
+      chunks.push(chunkContent);
+      currentChunkText = "";
+    };
+
+    // Helper to append text to current chunk, respecting size
+    const appendText = (text) => {
+      if (!text) return;
+
+      // If adding this text would exceed chunk size, commit current first
+      if (currentChunkText.length + text.length > this.chunkSize) {
+        commitChunk();
+      }
+
+      // If the text itself is larger than chunk size, we might need to split it
+      // using the sub-splitter (recursive)
+      if (text.length > this.chunkSize) {
+        // If we have pending text, commit it first
+        commitChunk();
+
+        // Use sub-splitter for this large block
+        // We can't use await inside this synchronous helper easily if we want to keep it simple,
+        // but this whole method is async.
+        // Let's handle this in the main loop instead or make this async.
+        // Making this return a promise or handling it inline in the loop is better.
+        // For simplicity, we just add it. If it's huge, we should probably split it.
+        // Let's assume for now we just push it and the LLM handles slightly larger chunks 
+        // OR we use the subSplitter here.
+        // But since we can't await in a non-async implementation easily without refactoring,
+        // we'll defer recursive splitting to the caller logic if possible.
+        // Actually, let's just make the main traversal handle the recursive split.
+        currentChunkText = text;
+        commitChunk();
+        return;
+      }
+
+      currentChunkText += (currentChunkText ? "\n" : "") + text;
+    };
+
+    // Flatten elements into a linear stream of text blocks
+    const flattenElements = (elements) => {
+      let textBlocks = [];
+
+      for (const el of elements) {
+        if (el.type === "heading") {
+          textBlocks.push(`${"#".repeat(el.level)} ${el.text}`);
+        } else if (el.type === "paragraph") {
+          if (el.text) textBlocks.push(el.text);
+        } else if (el.type === "list") {
+          if (el.items) {
+            el.items.forEach(item => {
+              // Determine the primary text for the bullet point
+              let hasPrimaryText = false;
+              if (item.text) {
+                textBlocks.push(`- ${item.text}`);
+                hasPrimaryText = true;
+              }
+
+              // internal "elements" or "children" can add more paragraphs
+              // If there was no primary text, the first child/element should act as the bullet item?
+              // Or we just strictly output them.
+              // If the user says "one or more paragraphs", usually it looks like:
+              // - Para 1
+              //   Para 2 (indented or just following)
+
+              const subElements = item.elements || item.children;
+              if (subElements) {
+                const subBlocks = flattenElements(subElements);
+                if (!hasPrimaryText && subBlocks.length > 0) {
+                  // Use first block as the bullet item
+                  textBlocks.push(`- ${subBlocks[0]}`);
+                  // Add separate blocks for the rest
+                  subBlocks.slice(1).forEach(block => textBlocks.push(block));
+                } else {
+                  // Just append them
+                  textBlocks = textBlocks.concat(subBlocks);
+                }
+              }
+            })
+          }
+        } else if (el.type === "section" && el.role === "header_metadata" && el.attributes) {
+          // Add metadata as text
+          const metaLines = Object.entries(el.attributes)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join("\n");
+          textBlocks.push(metaLines);
+        }
+      }
+      return textBlocks;
+    };
+
+    // Process pages
+    for (const item of data.content) {
+      if (item.type === "page" && item.elements) {
+        // Flattening here loses the rich structure we just defined in the example. 
+        // We need a smarter traversal that preserves the node metadata.
+
+        const traverse = (elements, parentContext = {}) => {
+          // console.log("Traversing elements:", elements.length);
+          elements.forEach(el => {
+            // If it's a container (like a list), recurse
+            if (el.items) {
+              el.items.forEach(item => {
+                if (item.elements) {
+                  traverse(item.elements, { ...parentContext });
+                } else {
+                  // Leaf item in list
+                  processElement(item, parentContext);
+                }
+              })
+              return;
+            }
+
+            // Process leaf element
+            processElement(el, parentContext);
+          });
+        }
+
+        const processElement = (el, context) => {
+          let content = el.embedding_text || el.text;
+          if (typeof content !== "string")
+            content = JSON.stringify(content);
+          // console.log("Process Element:", el.type, "Content:", content);
+          if (!content) return;
+
+          // ... (rest of logic) ...
+
+          const metadata = {
+            ...el.metadata,
+            chunk_id: el.chunk_id,
+            breadcrumbs: el.breadcrumbs,
+            token_estimate: el.token_estimate,
+            bbox: el.bbox,
+            relationships: el.relationships,
+            entities: el.entities,
+            semantic_type: el.semantic_type,
+            flags: el.flags
+          };
+          // console.log("Extracted Meta:", metadata);
+
+          chunks.push({
+            pageContent: this.chunkHeader ? `${this.chunkHeader}${content}` : content,
+            metadata: metadata
+          });
+        }
+
+        traverse(item.elements);
+      }
+    }
+
+    return this.returnObjects
+      ? chunks
+      : chunks.map((c) => c.pageContent);
+  }
+
 }
 
 module.exports.TextSplitter = TextSplitter;

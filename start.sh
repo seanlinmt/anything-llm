@@ -15,7 +15,7 @@ kill_port() {
 
 # Check and kill ports
 # User requested 3000, 30001, 8888. Including 3001 as it is the standard server port (30001 likely typo).
-echo "Checking ports 3000, 3001, 8888, 30001..."
+echo "Checking ports 3000, 3001, 8888 ..."
 kill_port 3000
 kill_port 3001
 kill_port 8888

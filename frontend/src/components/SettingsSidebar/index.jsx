@@ -256,6 +256,12 @@ const SidebarOptions = ({ user = null, t }) => (
               flex: true,
               roles: ["admin"],
             },
+            {
+              btnText: "Translation",
+              href: paths.settings.translationPreference(),
+              flex: true,
+              roles: ["admin"],
+            },
           ]}
         />
         <Option

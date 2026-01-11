@@ -33,6 +33,7 @@ The project is a Monorepo containing three main services:
   - `utils/vectorDbProviders/`: Connectors for Vector DBs (LanceDB, Pinecone, Milvus, etc.).
   - `utils/EmbeddingEngines/`: Logic for embedding text.
   - `utils/agents/`: Logic for AI Agents and Tools.
+  - `server/storage/`: Storage for vector DBs and other data.
 
 ### C. Collector (`/collector`)
 

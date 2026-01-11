@@ -1,9 +1,18 @@
 process.env.NODE_ENV === "development"
   ? require("dotenv").config({ path: `.env.${process.env.NODE_ENV}` })
   : require("dotenv").config();
-const { viewLocalFiles, normalizePath, isWithin } = require("../utils/files");
+const {
+  viewLocalFiles,
+  normalizePath,
+  isWithin,
+  cachedVectorInformation,
+  fileData,
+} = require("../utils/files");
 const { purgeDocument, purgeFolder } = require("../utils/files/purgeDocument");
-const { getVectorDbClass } = require("../utils/helpers");
+const {
+  getVectorDbClass,
+  getEmbeddingEngineSelection,
+} = require("../utils/helpers");
 const { updateENV, dumpENV } = require("../utils/helpers/updateENV");
 const {
   reqBody,
@@ -51,6 +60,7 @@ const {
   resetPassword,
   generateRecoveryCodes,
 } = require("../utils/PasswordRecovery");
+const { TextSplitter } = require("../utils/TextSplitter");
 const { SlashCommandPresets } = require("../models/slashCommandsPresets");
 const { EncryptionManager } = require("../utils/EncryptionManager");
 const { BrowserExtensionApiKey } = require("../models/browserExtensionApiKey");
@@ -492,6 +502,88 @@ function systemEndpoints(app) {
       try {
         const localFiles = await viewLocalFiles();
         response.status(200).json({ localFiles });
+      } catch (e) {
+        console.error(e.message, e);
+        response.sendStatus(500).end();
+      }
+    }
+  );
+
+  app.get(
+    "/system/document-chunks",
+    [validatedRequest, flexUserRoleValid([ROLES.admin, ROLES.manager])],
+    async (request, response) => {
+      try {
+        const { name } = request.query;
+        if (!name) {
+          response.status(400).json({ message: "Missing document name" });
+          return;
+        }
+
+        const { exists, chunks } = await cachedVectorInformation(name);
+        if (!exists) {
+          response
+            .status(404)
+            .json({ message: "No cached chunks found for this document" });
+          return;
+        }
+
+        response.status(200).json({ chunks });
+      } catch (e) {
+        console.error(e.message, e);
+        response.sendStatus(500).end();
+      }
+    }
+  );
+
+  app.post(
+    "/system/document-chunks/preview",
+    [validatedRequest, flexUserRoleValid([ROLES.admin, ROLES.manager])],
+    async (request, response) => {
+      try {
+        const {
+          name,
+          text_splitter_preference,
+          text_splitter_chunk_size,
+          text_splitter_chunk_overlap,
+        } = reqBody(request);
+
+        if (!name) {
+          response.status(400).json({ message: "Missing document name" });
+          return;
+        }
+
+        const fileContent = await fileData(name);
+        if (!fileContent) {
+          response.status(404).json({ message: "Document not found" });
+          return;
+        }
+
+        const config = {
+          splitByAlgorithm: text_splitter_preference,
+          chunkSize: Number(text_splitter_chunk_size),
+          chunkOverlap: Number(text_splitter_chunk_overlap),
+          embedding_text:
+            text_splitter_preference === "semantic"
+              ? getEmbeddingEngineSelection()
+              : null,
+          returnObjects: true,
+        };
+
+        const splitter = new TextSplitter(config);
+        const chunks = await splitter.splitText(fileContent.pageContent);
+
+        const formattedChunks = chunks.map((chunk) => {
+          return {
+            metadata: {
+              ...chunk.metadata,
+              text: chunk.pageContent,
+              length: chunk.pageContent?.length,
+            },
+          };
+        });
+
+        response.status(200).json({ chunks: formattedChunks });
       } catch (e) {
         console.error(e.message, e);
         response.sendStatus(500).end();

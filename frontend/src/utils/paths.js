@@ -117,6 +117,9 @@ export default {
     transcriptionPreference: () => {
       return "/settings/transcription-preference";
     },
+    translationPreference: () => {
+      return "/settings/translation-preference";
+    },
     audioPreference: () => {
       return "/settings/audio-preference";
     },

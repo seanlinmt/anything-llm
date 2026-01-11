@@ -5,6 +5,7 @@ const { Workspace } = require("../../../models/workspace");
 const {
   getLLMProvider,
   getEmbeddingEngineSelection,
+  getTranslationEngineSelection,
 } = require("../../../utils/helpers");
 const { reqBody } = require("../../../utils/http");
 const { validApiKey } = require("../../../utils/middleware/validApiKey");
@@ -332,6 +333,51 @@ function apiOpenAICompatibleEndpoints(app) {
           last_id: [...data].splice(-1)?.[0]?.id ?? data.splice(1)?.[0]?.id,
           data,
           has_more: false,
+        });
+      } catch (e) {
+        console.error(e.message, e);
+        response.status(500).end();
+      }
+    }
+  );
+
+  app.post(
+    "/v1/openai/translations",
+    [validApiKey],
+    async (request, response) => {
+      /*
+      #swagger.tags = ['OpenAI Compatible Endpoints']
+      #swagger.description = 'Translate text using the configured translation model (native only).'
+      #swagger.requestBody = {
+          description: 'The text to translate along with source and target languages.',
+          required: true,
+          content: {
+            "application/json": {
+              example: {
+                text: "Hello world",
+                source: "eng_Latn",
+                target: "fra_Latn"
+              }
+            }
+          }
+        }
+      #swagger.responses[403] = {
+        schema: {
+          "$ref": "#/definitions/InvalidAPIKey"
+        }
+      }
+      */
+      try {
+        const { text, source = "eng_Latn", target = "fra_Latn" } = reqBody(request);
+        if (!text) throw new Error("No text provided to translate.");
+
+        const Translator = getTranslationEngineSelection();
+        const translation = await Translator.translate(text, source, target);
+
+        return response.status(200).json({
+          object: "translation",
+          text: translation,
+          model: Translator.model,
         });
       } catch (e) {
         console.error(e.message, e);

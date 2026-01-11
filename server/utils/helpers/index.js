@@ -292,6 +292,17 @@ function getEmbeddingEngineSelection() {
 }
 
 /**
+ * Returns the TranslationProvider.
+ * @returns {import("../TranslationEngines/native").NativeTranslator}
+ */
+function getTranslationEngineSelection() {
+  const { NativeTranslator } = require("../TranslationEngines/native");
+  // Currently only native is supported
+  return new NativeTranslator();
+}
+
+
+/**
  * Returns the LLMProviderClass - this is a helper method to access static methods on a class
  * @param {{provider: string | null} | null} params - Initialize params for LLMs provider
  * @returns {BaseLLMProviderClass}
@@ -503,4 +514,5 @@ module.exports = {
   getBaseLLMProviderModel,
   getLLMProvider,
   toChunks,
+  getTranslationEngineSelection,
 };

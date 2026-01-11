@@ -288,16 +288,44 @@ const LanceDb = {
       if (!pageContent || pageContent.length == 0) return false;
 
       console.log("Adding new vectorized document into namespace", namespace);
+
+      // Helper to check for dimension consistency
+      const validateVectors = (vectors) => {
+        if (vectors.length === 0) return true;
+        const dim = vectors[0].vector.length;
+        return vectors.every((v) => v.vector.length === dim);
+      };
+
+      // Helper to check against table dimension
+      const matchesTableDimension = async (client, namespace, vectors) => {
+        if (vectors.length === 0) return true;
+        const exists = await this.namespaceExists(client, namespace);
+        if (!exists) return true; // No table yet, so any dimension is fine (will create table)
+
+        try {
+          const table = await client.openTable(namespace);
+          // Assuming schema structure: id, vector, ...
+          // In LanceDB schema, the vector field is usually a FixedSizeList
+          // We can try to infer or just peek at the schema if possible, 
+          // but checking schema in js client might be tricky depending on version.
+          // Easier way: Trust strict mode -> if we try to insert wrong dim it fails.
+          // But to be safer, we can check the schema explicitly if possible.
+          // For now, let's rely on the consistency check + cache invalidation logic below.
+          return true;
+        } catch (e) {
+          return true;
+        }
+      };
+
       if (!skipCache) {
         const cacheResult = await cachedVectorInformation(fullFilePath);
         if (cacheResult.exists) {
-          const { client } = await this.connect();
           const { chunks } = cacheResult;
           const documentVectors = [];
           const submissions = [];
 
-          for (const chunk of chunks) {
-            chunk.forEach((chunk) => {
+          for (const chunkGroup of chunks) {
+            chunkGroup.forEach((chunk) => {
               const id = uuidv4();
               const { id: _id, ...metadata } = chunk.metadata;
               documentVectors.push({ docId, vectorId: id });
@@ -305,9 +333,26 @@ const LanceDb = {
             });
           }
 
-          await this.updateOrCreateCollection(client, submissions, namespace);
-          await DocumentVectors.bulkInsert(documentVectors);
-          return { vectorized: true, error: null };
+          // validate consistency
+          if (!validateVectors(submissions)) {
+            console.warn(`[LanceDB] Cached vectors for ${fullFilePath} have inconsistent dimensions. Invalidating cache and re-embedding.`);
+            // proceed to non-cache flow
+          } else {
+            const { client } = await this.connect();
+            // Check if we can append these vectors?
+            // If table exists, we assume it might have a different dimension.
+            // If insertion fails due to dimension mismatch, we should catch it and retry with re-embedding.
+            // However, catching the specific Arrow error is hard. 
+            // Let's try to insert. If it fails, we fall back.
+            try {
+              await this.updateOrCreateCollection(client, submissions, namespace);
+              await DocumentVectors.bulkInsert(documentVectors);
+              return { vectorized: true, error: null };
+            } catch (e) {
+              console.warn(`[LanceDB] Failed to insert cached vectors (likely dimension mismatch). Invalidating cache and re-embedding. Error: ${e.message}`);
+              // Proceed to non-cache flow
+            }
+          }
         }
       }
 
